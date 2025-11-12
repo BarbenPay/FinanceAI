@@ -1,11 +1,9 @@
 import os
-#os.environ['YFINANCE_EA_OVERRIDE'] = '1'
-
+from curl_cffi import requests
 import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras.models import load_model
-
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from tensorflow.keras import mixed_precision
@@ -13,6 +11,14 @@ import yfinance as yf
 import pandas_ta as ta
 from datetime import datetime
 import json
+
+# --- AJOUTÉ : CRÉATION DU DOSSIER DE DÉBOGAGE ---
+DEBUG_CSV_PATH = 'debug_data'
+os.makedirs(DEBUG_CSV_PATH, exist_ok=True)
+# ----------------------------------------------
+
+# Session pour yfinance (déjà corrigé)
+session = requests.Session(impersonate="chrome110")
 
 # --- 1. ACTIVATION ACCÉLÉRATION MATÉRIELLE ---
 print("Activation de la politique de précision mixte...")
@@ -25,7 +31,7 @@ except Exception:
 
 # --- 2. CONFIGURATION DU BOT ---
 UNIVERSE_OF_STOCKS = [
-    "NVDA", "AMD", "TSLA", "COIN", "SHOP", "SQ", "PLTR", "SNOW", "NET", "U",
+    "NVDA", "AMD", "TSLA", "COIN", "SHOP", "PLTR", "SNOW", "NET", "U",
     "RIVN", "LCID", "PLUG", "ENPH", "MRNA", "CRSP", "TDOC", "AMC", "GME", "SPCE"
 ]
 MODEL_PATH = 'ultimate_hourly_model.keras'
@@ -55,7 +61,7 @@ if (end_of_catchup - start_of_catchup).total_seconds() < 3600:
 
 print(f"\nPériode à simuler : de {start_of_catchup} à {end_of_catchup}")
 fetch_start_date = start_of_catchup - pd.Timedelta(days=20) 
-all_market_data = yf.download(tickers=UNIVERSE_OF_STOCKS, start=fetch_start_date, end=end_of_catchup, interval='1h', auto_adjust=False, group_by='ticker', progress=False)
+all_market_data = yf.download(tickers=UNIVERSE_OF_STOCKS, start=fetch_start_date, end=end_of_catchup, interval='1h', auto_adjust=False, group_by='ticker', progress=False,session=session)
 if all_market_data.empty:
     print("Aucune nouvelle donnée de marché.")
     exit()
@@ -64,11 +70,22 @@ processed_data = {}
 model = load_model(MODEL_PATH)
 look_back = model.input_shape[1]
 features = None
+
 for ticker in UNIVERSE_OF_STOCKS:
-    if ticker not in all_market_data.columns or ('Open', ticker) not in all_market_data.columns: continue
-    df = all_market_data.loc[:, pd.IndexSlice[:, ticker]].copy()
-    df.columns = df.columns.droplevel(1) # Aplatir le MultiIndex
+    # --- MODIFIÉ : Correction de la condition de boucle ---
+    if ticker not in all_market_data.columns.get_level_values(0):
+        print(f"Aucune donnée brute téléchargée pour {ticker}, passage au suivant.")
+        continue
+    # ----------------------------------------------------
+    
+    df = all_market_data[ticker].copy()
+    #df.columns = df.columns.droplevel(1) # Aplatir le MultiIndex
     df.columns = [col.lower() for col in df.columns]
+
+    # --- AJOUTÉ : Sauvegarde des données BRUTES pour débogage ---
+    raw_filepath = os.path.join(DEBUG_CSV_PATH, f"{ticker}_raw.csv")
+    df.to_csv(raw_filepath)
+    # -----------------------------------------------------------
     
     # Calcul de tous les indicateurs...
     df.ta.sma(length=8, append=True); df.ta.sma(length=40, append=True)
@@ -79,7 +96,16 @@ for ticker in UNIVERSE_OF_STOCKS:
     df.ta.aroon(length=14, append=True); df.ta.willr(length=14, append=True)
     
     df.dropna(inplace=True)
-    if df.empty: continue
+
+    # --- AJOUTÉ : Sauvegarde des données TRAITÉES pour débogage ---
+    if not df.empty:
+        processed_filepath = os.path.join(DEBUG_CSV_PATH, f"{ticker}_processed.csv")
+        df.to_csv(processed_filepath)
+    # -------------------------------------------------------------
+    
+    if df.empty:
+        print(f"Le DataFrame pour {ticker} est vide après l'ajout des indicateurs et dropna().")
+        continue
     
     if features is None:
         features = [col for col in df.columns if col not in ['adj close']]
@@ -88,7 +114,16 @@ for ticker in UNIVERSE_OF_STOCKS:
     df[features] = scaler.fit_transform(df[features])
     processed_data[ticker] = df
 
-common_index = sorted(list(set.intersection(*(set(df.index) for df in processed_data.values()))))
+# --- MODIFIÉ : Correction du calcul de l'index commun ---
+if not processed_data:
+    common_index = []
+else:
+    list_of_sets = [set(df.index) for df in processed_data.values()]
+    # On prend le premier set et on trouve l'intersection avec tous les autres
+    intersection_result = list_of_sets[0].intersection(*list_of_sets[1:])
+    common_index = sorted(list(intersection_result))
+# ------------------------------------------------------
+
 catchup_index = [ts for ts in common_index if ts >= start_of_catchup and ts <= end_of_catchup]
 
 # --- BOUCLE DE SIMULATION ---
@@ -141,15 +176,13 @@ for timestamp in tqdm(catchup_index, desc="Simulation Prudente"):
                 trade_log = f"{timestamp} ACHAT de {ticker}: {shares_to_buy:.2f} actions à {price:.2f}$ (Capital Alloué: {investment_amount:,.2f}$)"
                 print(f"\n{trade_log}"); portfolio['history'].append(trade_log)
 
-# --- SECTION 6 CORRIGÉE ---
+# --- Sauvegarde du portefeuille ---
 portfolio['last_update'] = str(end_of_catchup)
 with open(PORTFOLIO_FILE, 'w') as f:
-    # On sauvegarde tout, y compris l'historique qui a été mis à jour
     json.dump(portfolio, f, indent=4)
 print("\n--- Simulation terminée. Portefeuille mis à jour et sauvegardé. ---")
-# ----------------------------
 
-# Rapport final (ne change pas)
+# Rapport final
 final_value = portfolio['cash']
 print(f"\nCash disponible : {portfolio['cash']:,.2f}$")
 if portfolio['positions']:

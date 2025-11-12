@@ -1,7 +1,29 @@
 {
     "start_date": "2025-11-03 22:47:20.580585",
-    "last_update": "2025-11-03 22:47:20.580585",
-    "cash": 10000.0,
-    "positions": {},
-    "history": []
+    "last_update": "2025-11-12 23:18:32.385440+00:00",
+    "cash": 0.0,
+    "positions": {
+        "TSLA": {
+            "shares": 5.410840809787281,
+            "buy_price": 462.035400390625
+        },
+        "SNOW": {
+            "shares": 9.392942130441273,
+            "buy_price": 266.15728759765625
+        },
+        "SPCE": {
+            "shares": 684.2753373980106,
+            "buy_price": 3.6535000801086426
+        },
+        "AMD": {
+            "shares": 9.71024657412141,
+            "buy_price": 257.4599914550781
+        }
+    },
+    "history": [
+        "2025-11-05 18:30:00+00:00 ACHAT de TSLA: 5.41 actions \u00e0 462.04$ (Capital Allou\u00e9: 2,500.00$)",
+        "2025-11-05 18:30:00+00:00 ACHAT de SNOW: 9.39 actions \u00e0 266.16$ (Capital Allou\u00e9: 2,500.00$)",
+        "2025-11-05 18:30:00+00:00 ACHAT de SPCE: 684.28 actions \u00e0 3.65$ (Capital Allou\u00e9: 2,500.00$)",
+        "2025-11-05 18:30:00+00:00 ACHAT de AMD: 9.71 actions \u00e0 257.46$ (Capital Allou\u00e9: 2,500.00$)"
+    ]
 }
